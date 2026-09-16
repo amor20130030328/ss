@@ -82,14 +82,15 @@ async def common_api_call(
     """
     try:
         client = get_http_client()
-        response = await client.post(url, headers=headers, json=data, timeout=timeout)
+        response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
         result = response.json()
         if result['result'] and result['result']['code'] == '0':
             return result['result']['content'][0]
         else:
+            logger.warning(f"API call returned non-success code for {request_id}: {result.get('result', {})}")
             return {}
     except Exception as e:
-        logger.error(f"API call failed for {request_id}: {e}")
+        logger.error(f"API call failed for {request_id}: {e}", exc_info=True)
         return {}
 
 
