@@ -41,8 +41,11 @@ async def request_speaker_omni(
         "session_id": session_id,
     }
     data, headers = build_mep_request(payload, config.speaker_omni_bid, config.speaker_omni_flowId)
+    logger.info(f"[request_speaker_omni] 开始请求 session_id={session_id}, url={config.omni_address}")
     result = await common_api_call(request_id, config.omni_address, headers, data, 3)
     response_data = result.get("src", {}) if result else {}
+    elapsed = time.time() - start_time
+    logger.info(f"[request_speaker_omni] 请求完成 session_id={session_id}, 耗时={elapsed:.3f}s, 返回数据={'有' if response_data else '无'}")
     return response_data
 
 
@@ -65,8 +68,10 @@ async def request_qwen3_asr(
     if enable_fa:
         payload["enable_fa"] = "true"
     data, headers = build_mep_request(payload, config.qwen3_asr_bid, config.qwen3_asr_flowId)
+    logger.info(f"[request_qwen3_asr] 开始请求 session_id={session_id}, enable_fa={enable_fa}, url={config.omni_address}")
     result = await common_api_call(request_id, config.omni_address, headers, data, 3)
     response_data = result.get("src", {}) if result else {}
+    logger.info(f"[request_qwen3_asr] 请求完成 session_id={session_id}, 返回数据={'有' if response_data else '无'}")
     return response_data
 
 
