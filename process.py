@@ -68,7 +68,7 @@ class AsyncIterableWebSocketAdapter:
 class SpeakerEngineProcess:
     def __init__(self):
         self.session_manager = None
-        self.max_sessions = (16)
+        self.max_sessions = 100  # 增加到100个并发会话
         self._admission_lock = asyncio.Lock()
         self._active_sessions = 0
         ray.init(
