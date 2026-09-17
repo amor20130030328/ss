@@ -40,9 +40,12 @@ async def request_speaker_omni(
 
     # Base64编码是CPU密集操作，放到线程池执行，避免阻塞事件循环
     import asyncio
+    encode_start = time.time()
     wave_b64 = await asyncio.to_thread(
         lambda: base64.b64encode(data.tobytes()).decode('utf-8')
     )
+    encode_time = time.time() - encode_start
+    logger.info(f"[request_speaker_omni] Base64编码耗时={encode_time:.3f}s, 数据大小={len(data.tobytes())/1024:.1f}KB")
 
     payload = {
         "data": wave_b64,
@@ -52,10 +55,14 @@ async def request_speaker_omni(
     }
     data, headers = build_mep_request(payload, config.speaker_omni_bid, config.speaker_omni_flowId)
     logger.info(f"[request_speaker_omni] 开始请求 session_id={session_id}, url={config.omni_address}")
+
+    api_start = time.time()
     result = await common_api_call(request_id, config.omni_address, headers, data, 3)
+    api_time = time.time() - api_start
+
     response_data = result.get("src", {}) if result else {}
     elapsed = time.time() - start_time
-    logger.info(f"[request_speaker_omni] 请求完成 session_id={session_id}, 耗时={elapsed:.3f}s, 返回数据={'有' if response_data else '无'}")
+    logger.info(f"[request_speaker_omni] 完成 session_id={session_id}, 总耗时={elapsed:.3f}s (编码={encode_time:.3f}s, API={api_time:.3f}s), 返回={'有' if response_data else '无'}")
     return response_data
 
 
@@ -71,9 +78,12 @@ async def request_qwen3_asr(
 
     # Base64编码是CPU密集操作，放到线程池执行，避免阻塞事件循环
     import asyncio
+    encode_start = time.time()
     wave_b64 = await asyncio.to_thread(
         lambda: base64.b64encode(data.tobytes()).decode('utf-8')
     )
+    encode_time = time.time() - encode_start
+    logger.debug(f"[request_qwen3_asr] Base64编码耗时={encode_time:.3f}s, 数据大小={len(data.tobytes())/1024:.1f}KB")
 
     payload = {
         "data": wave_b64,
