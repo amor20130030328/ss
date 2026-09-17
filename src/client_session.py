@@ -267,7 +267,11 @@ class ClientSession:
 
                 speaker_infos, spk_text = await self.speaker_main_process.run(frame, vad_res, asr_text)
                 if speaker_infos:
-                    await self.websocket.send(speaker_infos)
+                    # 检查WebSocket是否已关闭
+                    if not self.closed_event.is_set():
+                        await self.websocket.send(speaker_infos)
+                    else:
+                        self.logger.warning("WebSocket已关闭，跳过发送speaker_infos")
                     self.latest_speaker_log = SpeakerLog(frame=frame, text=spk_text, start=vad_res.start,
                                                          end=vad_res.end)
                     self.logger.info(
@@ -301,7 +305,11 @@ class ClientSession:
                 self.logger.info(f"Guard拦截(partial): reason={verdict.reason}, text={text} time={time.time() - st}")
                 return self.guard_state.trusted_text
 
-            await self.websocket.send(result)
+            # 检查WebSocket是否已关闭
+            if not self.closed_event.is_set():
+                await self.websocket.send(result)
+            else:
+                self.logger.warning("WebSocket已关闭，跳过发送ASR结果")
             return text
         return ""
 
