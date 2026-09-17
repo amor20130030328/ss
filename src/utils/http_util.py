@@ -37,7 +37,13 @@ async def request_speaker_omni(
 ) -> dict:
     start_time = time.time()
     request_id = str(uuid.uuid4())
-    wave_b64 = base64.b64encode(data.tobytes()).decode('utf-8')
+
+    # Base64编码是CPU密集操作，放到线程池执行，避免阻塞事件循环
+    import asyncio
+    wave_b64 = await asyncio.to_thread(
+        lambda: base64.b64encode(data.tobytes()).decode('utf-8')
+    )
+
     payload = {
         "data": wave_b64,
         "asr": asr,
@@ -62,7 +68,13 @@ async def request_qwen3_asr(
         enable_fa: bool = False
 ) -> dict:
     request_id = session_id
-    wave_b64 = base64.b64encode(data.tobytes()).decode('utf-8')
+
+    # Base64编码是CPU密集操作，放到线程池执行，避免阻塞事件循环
+    import asyncio
+    wave_b64 = await asyncio.to_thread(
+        lambda: base64.b64encode(data.tobytes()).decode('utf-8')
+    )
+
     payload = {
         "data": wave_b64,
         "session_id": session_id,
