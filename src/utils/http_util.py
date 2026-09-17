@@ -12,15 +12,10 @@ from src.configs.config import config
 from src.utils.crypt_util import decrypt_secret
 from src.logger.logger_adapter import logger
 
-import asyncio
 import os
 
 # 全局异步HTTP客户端（复用连接池）
 _http_client = None
-# 全局并发控制信号量（限制同时请求数）
-# 可通过环境变量 MAX_CONCURRENT_REQUESTS 调整，默认5
-MAX_CONCURRENT = int(os.getenv('MAX_CONCURRENT_REQUESTS', '5'))
-_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
 def get_http_client():
     global _http_client
@@ -30,7 +25,7 @@ def get_http_client():
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
             http2=True  # 启用HTTP/2，支持多路复用
         )
-        logger.info(f"HTTP客户端初始化完成，最大并发数={MAX_CONCURRENT}")
+        logger.info(f"HTTP客户端初始化完成，连接池大小=100")
     return _http_client
 
 
@@ -92,42 +87,41 @@ async def common_api_call(
         timeout: int
 ) -> dict:
     """
-    通用API调用函数 - 异步版本（带并发控制）
+    通用API调用函数 - 异步版本（无限流）
     """
-    async with _semaphore:  # 控制并发数，避免服务端过载
-        try:
-            client = get_http_client()
+    try:
+        client = get_http_client()
 
-            # 记录请求开始时间
-            req_start = time.time()
-            logger.debug(f"[common_api_call] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
+        # 记录请求开始时间
+        req_start = time.time()
+        logger.debug(f"[common_api_call] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
 
-            response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
+        response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
 
-            # 记录网络耗时
-            network_time = time.time() - req_start
-            logger.info(f"[common_api_call] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}")
+        # 记录网络耗时
+        network_time = time.time() - req_start
+        logger.info(f"[common_api_call] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}")
 
-            # 记录JSON解析时间
-            parse_start = time.time()
-            result = response.json()
-            parse_time = time.time() - parse_start
-            logger.debug(f"[common_api_call] JSON解析耗时={parse_time:.3f}s")
+        # 记录JSON解析时间
+        parse_start = time.time()
+        result = response.json()
+        parse_time = time.time() - parse_start
+        logger.debug(f"[common_api_call] JSON解析耗时={parse_time:.3f}s")
 
-            if result['result'] and result['result']['code'] == '0':
-                return result['result']['content'][0]
-            else:
-                logger.warning(f"API call returned non-success code for {request_id}: {result.get('result', {})}")
-                return {}
-        except httpx.TimeoutException as e:
-            logger.error(f"API call timeout for {request_id} after {timeout}s: {e}")
+        if result['result'] and result['result']['code'] == '0':
+            return result['result']['content'][0]
+        else:
+            logger.warning(f"API call returned non-success code for {request_id}: {result.get('result', {})}")
             return {}
-        except httpx.HTTPStatusError as e:
-            logger.error(f"API call HTTP error for {request_id}: status={e.response.status_code}, body={e.response.text[:200]}")
-            return {}
-        except Exception as e:
-            logger.error(f"API call failed for {request_id}: {type(e).__name__}: {e}", exc_info=True)
-            return {}
+    except httpx.TimeoutException as e:
+        logger.error(f"API call timeout for {request_id} after {timeout}s: {e}")
+        return {}
+    except httpx.HTTPStatusError as e:
+        logger.error(f"API call HTTP error for {request_id}: status={e.response.status_code}, body={e.response.text[:200]}")
+        return {}
+    except Exception as e:
+        logger.error(f"API call failed for {request_id}: {type(e).__name__}: {e}", exc_info=True)
+        return {}
 
 
 def build_mep_request(payload, bId, flowId) -> tuple[dict, dict]:
