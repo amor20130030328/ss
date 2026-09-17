@@ -20,7 +20,8 @@ def get_http_client():
     if _http_client is None:
         _http_client = httpx.AsyncClient(
             timeout=10.0,
-            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            http2=True  # 启用HTTP/2，支持多路复用
         )
     return _http_client
 
@@ -87,10 +88,23 @@ async def common_api_call(
     """
     try:
         client = get_http_client()
+
+        # 记录请求开始时间
+        req_start = time.time()
         logger.debug(f"[common_api_call] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
+
         response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
-        logger.debug(f"[common_api_call] 收到响应 request_id={request_id}, status_code={response.status_code}")
+
+        # 记录网络耗时
+        network_time = time.time() - req_start
+        logger.info(f"[common_api_call] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}")
+
+        # 记录JSON解析时间
+        parse_start = time.time()
         result = response.json()
+        parse_time = time.time() - parse_start
+        logger.debug(f"[common_api_call] JSON解析耗时={parse_time:.3f}s")
+
         if result['result'] and result['result']['code'] == '0':
             return result['result']['content'][0]
         else:
