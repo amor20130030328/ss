@@ -38,14 +38,12 @@ async def request_speaker_omni(
     start_time = time.time()
     request_id = str(uuid.uuid4())
 
-    # Base64编码是CPU密集操作，放到线程池执行，避免阻塞事件循环
-    import asyncio
+    # 直接在主线程编码，numpy tobytes() 已经很快了
     encode_start = time.time()
-    wave_b64 = await asyncio.to_thread(
-        lambda: base64.b64encode(data.tobytes()).decode('utf-8')
-    )
+    wave_bytes = data.tobytes()
+    wave_b64 = base64.b64encode(wave_bytes).decode('utf-8')
     encode_time = time.time() - encode_start
-    logger.info(f"[request_speaker_omni] Base64编码耗时={encode_time:.3f}s, 数据大小={len(data.tobytes())/1024:.1f}KB")
+    logger.info(f"[request_speaker_omni] Base64编码耗时={encode_time:.3f}s, 数据大小={len(wave_bytes)/1024:.1f}KB")
 
     payload = {
         "data": wave_b64,
@@ -76,14 +74,12 @@ async def request_qwen3_asr(
 ) -> dict:
     request_id = session_id
 
-    # Base64编码是CPU密集操作，放到线程池执行，避免阻塞事件循环
-    import asyncio
+    # 直接在主线程编码，numpy tobytes() 已经很快了
     encode_start = time.time()
-    wave_b64 = await asyncio.to_thread(
-        lambda: base64.b64encode(data.tobytes()).decode('utf-8')
-    )
+    wave_bytes = data.tobytes()
+    wave_b64 = base64.b64encode(wave_bytes).decode('utf-8')
     encode_time = time.time() - encode_start
-    logger.debug(f"[request_qwen3_asr] Base64编码耗时={encode_time:.3f}s, 数据大小={len(data.tobytes())/1024:.1f}KB")
+    logger.debug(f"[request_qwen3_asr] Base64编码耗时={encode_time:.3f}s, 数据大小={len(wave_bytes)/1024:.1f}KB")
 
     payload = {
         "data": wave_b64,
