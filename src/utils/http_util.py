@@ -55,7 +55,7 @@ async def request_speaker_omni(
     logger.info(f"[request_speaker_omni] 开始请求 session_id={session_id}, url={config.omni_address}")
 
     api_start = time.time()
-    result = await common_api_call(request_id, config.omni_address, headers, data, 3)
+    result = await common_api_call(request_id, config.omni_address, headers, data, 3, api_name="speaker_omni")
     api_time = time.time() - api_start
 
     response_data = result.get("src", {}) if result else {}
@@ -91,7 +91,7 @@ async def request_qwen3_asr(
         payload["enable_fa"] = "true"
     data, headers = build_mep_request(payload, config.qwen3_asr_bid, config.qwen3_asr_flowId)
     logger.info(f"[request_qwen3_asr] 开始请求 session_id={session_id}, enable_fa={enable_fa}, url={config.omni_address}")
-    result = await common_api_call(request_id, config.omni_address, headers, data, 3)
+    result = await common_api_call(request_id, config.omni_address, headers, data, 3, api_name="qwen3_asr")
     response_data = result.get("src", {}) if result else {}
     logger.info(f"[request_qwen3_asr] 请求完成 session_id={session_id}, 返回数据={'有' if response_data else '无'}")
     return response_data
@@ -102,7 +102,8 @@ async def common_api_call(
         url: str,
         headers: dict,
         data: dict,
-        timeout: int
+        timeout: int,
+        api_name: str = "unknown"
 ) -> dict:
     """
     通用API调用函数 - 异步版本（无限流）
@@ -112,19 +113,19 @@ async def common_api_call(
 
         # 记录请求开始时间
         req_start = time.time()
-        logger.debug(f"[common_api_call] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
+        logger.debug(f"[common_api_call:{api_name}] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
 
         response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
 
         # 记录网络耗时
         network_time = time.time() - req_start
-        logger.info(f"[common_api_call] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}")
+        logger.info(f"[common_api_call:{api_name}] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}")
 
         # 记录JSON解析时间
         parse_start = time.time()
         result = response.json()
         parse_time = time.time() - parse_start
-        logger.debug(f"[common_api_call] JSON解析耗时={parse_time:.3f}s")
+        logger.debug(f"[common_api_call:{api_name}] JSON解析耗时={parse_time:.3f}s")
 
         if result['result'] and result['result']['code'] == '0':
             return result['result']['content'][0]
