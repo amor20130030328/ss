@@ -23,12 +23,12 @@ def get_http_client():
         _http_client = httpx.AsyncClient(
             timeout=10.0,
             limits=httpx.Limits(
-                max_connections=100,
-                max_keepalive_connections=50  # 增加到50，支持更多并发
+                max_connections=100,      # 允许100个并发连接
+                max_keepalive_connections=0  # 禁用keepalive，每次新建连接
             ),
             http2=True  # 启用HTTP/2（如果服务端支持）
         )
-        logger.info(f"HTTP客户端初始化完成，连接池大小=100, keepalive=50")
+        logger.info(f"HTTP客户端初始化完成，连接池大小=100, keepalive=0（禁用连接复用）")
     return _http_client
 
 
@@ -109,11 +109,12 @@ async def common_api_call(
         api_name: str = "unknown"
 ) -> dict:
     """
-    通用API调用函数 - 异步版本（无限流）
+    通用API调用函数 - 异步版本（每次创建独立客户端避免HTTP/1.1连接复用问题）
     """
-    try:
-        client = get_http_client()
+    # 每次创建独立客户端，避免连接复用导致的排队
+    client = httpx.AsyncClient(timeout=timeout)
 
+    try:
         # 记录请求开始时间
         req_start = time.time()
         logger.debug(f"[common_api_call:{api_name}] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
@@ -144,6 +145,9 @@ async def common_api_call(
     except Exception as e:
         logger.error(f"API call failed for {request_id}: {type(e).__name__}: {e}", exc_info=True)
         return {}
+    finally:
+        # 关闭独立客户端
+        await client.aclose()
 
 
 def build_mep_request(payload, bId, flowId) -> tuple[dict, dict]:
