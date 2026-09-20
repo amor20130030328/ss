@@ -22,10 +22,13 @@ def get_http_client():
     if _http_client is None:
         _http_client = httpx.AsyncClient(
             timeout=10.0,
-            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
-            http2=True  # 启用HTTP/2，支持多路复用
+            limits=httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=50  # 增加到50，支持更多并发
+            ),
+            http2=True  # 启用HTTP/2（如果服务端支持）
         )
-        logger.info(f"HTTP客户端初始化完成，连接池大小=100")
+        logger.info(f"HTTP客户端初始化完成，连接池大小=100, keepalive=50")
     return _http_client
 
 
