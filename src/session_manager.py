@@ -166,11 +166,10 @@ class SessionManager:
 
     def _init_actor_pools(self):
         # 优化：根据实际并发需求初始化Actor + 并行加载
-        # VPR模型加载慢，启动时只初始化2个，其余按需加载
         actor_pool_size = min(10, int(config.max_connections))  # 通用Actor池
-        vpr_pool_size = 2  # VPR启动时只初始化2个（懒加载）
+        vpr_pool_size = actor_pool_size  # VPR全量初始化
 
-        self.logger.info(f"Initializing actors in parallel: general={actor_pool_size}, vpr={vpr_pool_size} (lazy load, max_connections={config.max_connections})")
+        self.logger.info(f"Initializing actors in parallel: general={actor_pool_size}, vpr={vpr_pool_size}, max_connections={config.max_connections}")
 
         import concurrent.futures
         import time
@@ -195,33 +194,45 @@ class SessionManager:
             self._free_vad_actors = future_vad.result()
 
         elapsed = time.time() - start_time
-        self.logger.info(f"✅ All actors initialized in {elapsed:.2f}s (general={actor_pool_size}, vpr={vpr_pool_size} lazy, parallel)")
+        self.logger.info(f"✅ All actors initialized in {elapsed:.2f}s (general={actor_pool_size}, vpr={vpr_pool_size}, parallel)")
 
     def _init_itn_actors(self, count):
-        """初始化ITN Actor池"""
-        self.logger.info(f"[Thread] Initializing {count} itn actors... {config.itn_path}")
-        actors = [ItnRayActor(config) for _ in range(count)]
+        """初始化ITN Actor池（并行创建）"""
+        self.logger.info(f"[Thread] Initializing {count} itn actors in parallel... {config.itn_path}")
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=count) as executor:
+            futures = [executor.submit(ItnRayActor, config) for _ in range(count)]
+            actors = [f.result() for f in concurrent.futures.as_completed(futures)]
         self.logger.info(f"[Thread] ✅ {count} itn actors ready")
         return actors
 
     def _init_vpr_actors(self, count):
-        """初始化VPR Actor池"""
-        self.logger.info(f"[Thread] Initializing {count} vpr actors... {config.vpr_path}")
-        actors = [VprRayActor(config) for _ in range(count)]
+        """初始化VPR Actor池（并行创建）"""
+        self.logger.info(f"[Thread] Initializing {count} vpr actors in parallel... {config.vpr_path}")
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=count) as executor:
+            futures = [executor.submit(VprRayActor, config) for _ in range(count)]
+            actors = [f.result() for f in concurrent.futures.as_completed(futures)]
         self.logger.info(f"[Thread] ✅ {count} vpr actors ready")
         return actors
 
     def _init_opus_actors(self, count):
-        """初始化Opus Actor池"""
-        self.logger.info(f"[Thread] Initializing {count} opus actors...")
-        actors = [OpusToPcmConverterRayActor() for _ in range(count)]
+        """初始化Opus Actor池（并行创建）"""
+        self.logger.info(f"[Thread] Initializing {count} opus actors in parallel...")
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=count) as executor:
+            futures = [executor.submit(OpusToPcmConverterRayActor) for _ in range(count)]
+            actors = [f.result() for f in concurrent.futures.as_completed(futures)]
         self.logger.info(f"[Thread] ✅ {count} opus actors ready")
         return actors
 
     def _init_vad_actors(self, count):
-        """初始化VAD Actor池"""
-        self.logger.info(f"[Thread] Initializing {count} vad actors... {config.vad_path}")
-        actors = [VadRayActor(config.vad_path) for _ in range(count)]
+        """初始化VAD Actor池（并行创建）"""
+        self.logger.info(f"[Thread] Initializing {count} vad actors in parallel... {config.vad_path}")
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=count) as executor:
+            futures = [executor.submit(VadRayActor, config.vad_path) for _ in range(count)]
+            actors = [f.result() for f in concurrent.futures.as_completed(futures)]
         self.logger.info(f"[Thread] ✅ {count} vad actors ready")
         return actors
 
