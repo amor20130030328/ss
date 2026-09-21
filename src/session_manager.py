@@ -165,32 +165,63 @@ class SessionManager:
         self.logger.info("SessionManager stopped and all resources cleaned up")
 
     def _init_actor_pools(self):
-        # 优化：根据实际并发需求初始化Actor
-        # 实际上6-10路并发足够，Actor池不需要太大
+        # 优化：根据实际并发需求初始化Actor + 并行加载
         actor_pool_size = min(10, int(config.max_connections))  # 最多10个Actor即可
 
-        self.logger.info(f"Initializing {actor_pool_size} actors (max_connections={config.max_connections})")
+        self.logger.info(f"Initializing {actor_pool_size} actors in parallel (max_connections={config.max_connections})")
 
-        self.logger.info(f"Waiting for all itn actors to initialize... {config.itn_path}")
-        itn_actors = [ItnRayActor(config) for _ in range(actor_pool_size)]
-        self._free_itn_actors = itn_actors[:]
-        self.logger.info(f"✅ {actor_pool_size} itn actors ready.")
+        import concurrent.futures
+        import time
 
-        self.logger.info(f"Waiting for all vpr actors to initialize... {config.vpr_path}")
-        vpr_actors = [VprRayActor(config) for _ in range(actor_pool_size)]
-        self._free_vpr_actors = vpr_actors[:]
-        self.logger.info(f"✅ {actor_pool_size} vpr actors ready.")
+        start_time = time.time()
 
-        # Opus解码Actor
-        self.logger.info("Waiting for all opus actors to initialize...")
-        opus_convertor_actors = [OpusToPcmConverterRayActor() for _ in range(actor_pool_size)]
-        self._free_opus_actors = opus_convertor_actors[:]
-        self.logger.info(f"✅ {actor_pool_size} opus actors ready.")
+        # 并行初始化4种Actor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # 提交4个初始化任务
+            future_itn = executor.submit(self._init_itn_actors, actor_pool_size)
+            future_vpr = executor.submit(self._init_vpr_actors, actor_pool_size)
+            future_opus = executor.submit(self._init_opus_actors, actor_pool_size)
+            future_vad = executor.submit(self._init_vad_actors, actor_pool_size)
 
-        self.logger.info(f"Waiting for all vad actors to initialize... {config.vad_path}")
-        vad_actors = [VadRayActor(config.vad_path) for _ in range(actor_pool_size)]
-        self._free_vad_actors = vad_actors[:]
-        self.logger.info(f"✅ {actor_pool_size} vad actors ready.")
+            # 等待所有任务完成
+            concurrent.futures.wait([future_itn, future_vpr, future_opus, future_vad])
+
+            # 获取结果
+            self._free_itn_actors = future_itn.result()
+            self._free_vpr_actors = future_vpr.result()
+            self._free_opus_actors = future_opus.result()
+            self._free_vad_actors = future_vad.result()
+
+        elapsed = time.time() - start_time
+        self.logger.info(f"✅ All {actor_pool_size}×4 actors initialized in {elapsed:.2f}s (parallel)")
+
+    def _init_itn_actors(self, count):
+        """初始化ITN Actor池"""
+        self.logger.info(f"[Thread] Initializing {count} itn actors... {config.itn_path}")
+        actors = [ItnRayActor(config) for _ in range(count)]
+        self.logger.info(f"[Thread] ✅ {count} itn actors ready")
+        return actors
+
+    def _init_vpr_actors(self, count):
+        """初始化VPR Actor池"""
+        self.logger.info(f"[Thread] Initializing {count} vpr actors... {config.vpr_path}")
+        actors = [VprRayActor(config) for _ in range(count)]
+        self.logger.info(f"[Thread] ✅ {count} vpr actors ready")
+        return actors
+
+    def _init_opus_actors(self, count):
+        """初始化Opus Actor池"""
+        self.logger.info(f"[Thread] Initializing {count} opus actors...")
+        actors = [OpusToPcmConverterRayActor() for _ in range(count)]
+        self.logger.info(f"[Thread] ✅ {count} opus actors ready")
+        return actors
+
+    def _init_vad_actors(self, count):
+        """初始化VAD Actor池"""
+        self.logger.info(f"[Thread] Initializing {count} vad actors... {config.vad_path}")
+        actors = [VadRayActor(config.vad_path) for _ in range(count)]
+        self.logger.info(f"[Thread] ✅ {count} vad actors ready")
+        return actors
 
         
 
