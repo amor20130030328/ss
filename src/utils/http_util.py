@@ -58,7 +58,7 @@ async def request_speaker_omni(
     logger.info(f"[request_speaker_omni] 开始请求 session_id={session_id}, url={config.omni_address}")
 
     api_start = time.time()
-    result = await common_api_call(request_id, config.omni_address, headers, data, 3, api_name="speaker_omni")
+    result = await common_api_call(request_id, config.omni_address, headers, data, 10, api_name="speaker_omni")  # 3秒 → 10秒
     api_time = time.time() - api_start
 
     response_data = result.get("src", {}) if result else {}
@@ -94,7 +94,7 @@ async def request_qwen3_asr(
         payload["enable_fa"] = "true"
     data, headers = build_mep_request(payload, config.qwen3_asr_bid, config.qwen3_asr_flowId)
     logger.info(f"[request_qwen3_asr] 开始请求 session_id={session_id}, enable_fa={enable_fa}, url={config.omni_address}")
-    result = await common_api_call(request_id, config.omni_address, headers, data, 3, api_name="qwen3_asr")
+    result = await common_api_call(request_id, config.omni_address, headers, data, 10, api_name="qwen3_asr")  # 3秒 → 10秒
     response_data = result.get("src", {}) if result else {}
     logger.info(f"[request_qwen3_asr] 请求完成 session_id={session_id}, 返回数据={'有' if response_data else '无'}")
     return response_data
@@ -109,10 +109,9 @@ async def common_api_call(
         api_name: str = "unknown"
 ) -> dict:
     """
-    通用API调用函数 - 异步版本（每次创建独立客户端避免HTTP/1.1连接复用问题）
+    通用API调用函数 - 异步版本（使用共享客户端但大连接池）
     """
-    # 每次创建独立客户端，避免连接复用导致的排队
-    client = httpx.AsyncClient(timeout=timeout)
+    client = get_http_client()
 
     try:
         # 记录请求开始时间
@@ -123,7 +122,7 @@ async def common_api_call(
 
         # 记录网络耗时
         network_time = time.time() - req_start
-        logger.info(f"[common_api_call:{api_name}] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}")
+        logger.info(f"[common_api_call:{api_name}] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}, http_version={response.http_version}")
 
         # 记录JSON解析时间
         parse_start = time.time()
@@ -145,9 +144,6 @@ async def common_api_call(
     except Exception as e:
         logger.error(f"API call failed for {request_id}: {type(e).__name__}: {e}", exc_info=True)
         return {}
-    finally:
-        # 关闭独立客户端
-        await client.aclose()
 
 
 def build_mep_request(payload, bId, flowId) -> tuple[dict, dict]:
