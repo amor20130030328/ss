@@ -112,27 +112,28 @@ async def common_api_call(
         api_name: str = "unknown"
 ) -> dict:
     """
-    通用API调用函数 - 异步版本（带并发限制）
+    通用API调用函数 - 每次创建独立客户端实现真正并发
+    牺牲TCP握手开销（~50ms），换取HTTP/1.1下的真正并发
     """
-    async with _semaphore:  # 限制并发数
-        client = get_http_client()
+    # 创建独立客户端，避免HTTP/1.1连接复用导致的排队
+    client = httpx.AsyncClient(timeout=timeout)
 
-        try:
-            # 记录请求开始时间
-            req_start = time.time()
-            logger.debug(f"[common_api_call:{api_name}] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
+    try:
+        # 记录请求开始时间
+        req_start = time.time()
+        logger.debug(f"[common_api_call:{api_name}] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
 
-            response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
+        response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
 
-            # 记录网络耗时
-            network_time = time.time() - req_start
-            logger.info(f"[common_api_call:{api_name}] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}, http_version={response.http_version}")
+        # 记录网络耗时
+        network_time = time.time() - req_start
+        logger.info(f"[common_api_call:{api_name}] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}, http_version={response.http_version}")
 
-            # 记录JSON解析时间
-            parse_start = time.time()
-            result = response.json()
-            parse_time = time.time() - parse_start
-            logger.debug(f"[common_api_call:{api_name}] JSON解析耗时={parse_time:.3f}s")
+        # 记录JSON解析时间
+        parse_start = time.time()
+        result = response.json()
+        parse_time = time.time() - parse_start
+        logger.debug(f"[common_api_call:{api_name}] JSON解析耗时={parse_time:.3f}s")
 
         if result['result'] and result['result']['code'] == '0':
             return result['result']['content'][0]
@@ -140,14 +141,17 @@ async def common_api_call(
             logger.warning(f"API call returned non-success code for {request_id}: {result.get('result', {})}")
             return {}
     except httpx.TimeoutException as e:
-        logger.error(f"API call timeout for {request_id} after {timeout}s: {e}")
+        logger.error(f"[{api_name}] API call timeout for {request_id} after {timeout}s: {e}")
         return {}
     except httpx.HTTPStatusError as e:
-        logger.error(f"API call HTTP error for {request_id}: status={e.response.status_code}, body={e.response.text[:200]}")
+        logger.error(f"[{api_name}] API call HTTP error for {request_id}: status={e.response.status_code}")
         return {}
     except Exception as e:
-        logger.error(f"API call failed for {request_id}: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"[{api_name}] API call failed for {request_id}: {type(e).__name__}: {e}", exc_info=True)
         return {}
+    finally:
+        # 关闭独立客户端
+        await client.aclose()
 
 
 def build_mep_request(payload, bId, flowId) -> tuple[dict, dict]:
