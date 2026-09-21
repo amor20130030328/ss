@@ -166,9 +166,11 @@ class SessionManager:
 
     def _init_actor_pools(self):
         # 优化：根据实际并发需求初始化Actor + 并行加载
-        actor_pool_size = min(10, int(config.max_connections))  # 最多10个Actor即可
+        # VPR模型加载慢，启动时只初始化2个，其余按需加载
+        actor_pool_size = min(10, int(config.max_connections))  # 通用Actor池
+        vpr_pool_size = 2  # VPR启动时只初始化2个（懒加载）
 
-        self.logger.info(f"Initializing {actor_pool_size} actors in parallel (max_connections={config.max_connections})")
+        self.logger.info(f"Initializing actors in parallel: general={actor_pool_size}, vpr={vpr_pool_size} (lazy load, max_connections={config.max_connections})")
 
         import concurrent.futures
         import time
@@ -177,9 +179,9 @@ class SessionManager:
 
         # 并行初始化4种Actor
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            # 提交4个初始化任务
+            # 提交4个初始化任务，VPR使用更小的池
             future_itn = executor.submit(self._init_itn_actors, actor_pool_size)
-            future_vpr = executor.submit(self._init_vpr_actors, actor_pool_size)
+            future_vpr = executor.submit(self._init_vpr_actors, vpr_pool_size)  # 只初始化2个
             future_opus = executor.submit(self._init_opus_actors, actor_pool_size)
             future_vad = executor.submit(self._init_vad_actors, actor_pool_size)
 
@@ -193,7 +195,7 @@ class SessionManager:
             self._free_vad_actors = future_vad.result()
 
         elapsed = time.time() - start_time
-        self.logger.info(f"✅ All {actor_pool_size}×4 actors initialized in {elapsed:.2f}s (parallel)")
+        self.logger.info(f"✅ All actors initialized in {elapsed:.2f}s (general={actor_pool_size}, vpr={vpr_pool_size} lazy, parallel)")
 
     def _init_itn_actors(self, count):
         """初始化ITN Actor池"""
