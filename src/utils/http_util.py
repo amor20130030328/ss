@@ -13,9 +13,12 @@ from src.utils.crypt_util import decrypt_secret
 from src.logger.logger_adapter import logger
 
 import os
+import asyncio
 
 # 全局异步HTTP客户端（复用连接池）
 _http_client = None
+# 全局并发限制（避免过多并发压垮服务端）
+_semaphore = asyncio.Semaphore(6)  # 最多6个并发请求
 
 def get_http_client():
     global _http_client
@@ -109,26 +112,27 @@ async def common_api_call(
         api_name: str = "unknown"
 ) -> dict:
     """
-    通用API调用函数 - 异步版本（使用共享客户端但大连接池）
+    通用API调用函数 - 异步版本（带并发限制）
     """
-    client = get_http_client()
+    async with _semaphore:  # 限制并发数
+        client = get_http_client()
 
-    try:
-        # 记录请求开始时间
-        req_start = time.time()
-        logger.debug(f"[common_api_call:{api_name}] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
+        try:
+            # 记录请求开始时间
+            req_start = time.time()
+            logger.debug(f"[common_api_call:{api_name}] 发起请求 request_id={request_id}, url={url}, timeout={timeout}")
 
-        response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
+            response = await client.post(url, headers=headers, content=json.dumps(data), timeout=timeout)
 
-        # 记录网络耗时
-        network_time = time.time() - req_start
-        logger.info(f"[common_api_call:{api_name}] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}, http_version={response.http_version}")
+            # 记录网络耗时
+            network_time = time.time() - req_start
+            logger.info(f"[common_api_call:{api_name}] 网络请求完成 request_id={request_id}, 网络耗时={network_time:.3f}s, status={response.status_code}, http_version={response.http_version}")
 
-        # 记录JSON解析时间
-        parse_start = time.time()
-        result = response.json()
-        parse_time = time.time() - parse_start
-        logger.debug(f"[common_api_call:{api_name}] JSON解析耗时={parse_time:.3f}s")
+            # 记录JSON解析时间
+            parse_start = time.time()
+            result = response.json()
+            parse_time = time.time() - parse_start
+            logger.debug(f"[common_api_call:{api_name}] JSON解析耗时={parse_time:.3f}s")
 
         if result['result'] and result['result']['code'] == '0':
             return result['result']['content'][0]
